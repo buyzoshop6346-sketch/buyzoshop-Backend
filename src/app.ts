@@ -10,7 +10,7 @@ const app: Application = express();
 const corsOptions = {
   origin: [
     'http://localhost:3000',
-    'https://test-website-001-frontend-tau.vercel.app',
+    'https://buyzoshop-frontend-delta.vercel.app',
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
