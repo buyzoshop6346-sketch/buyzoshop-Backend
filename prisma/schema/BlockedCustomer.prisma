@@ -1,0 +1,14 @@
+model BlockedCustomer {
+  id          String   @id @default(uuid())
+
+  phone       String?  @unique
+  ipAddress   String?  @unique
+
+  reason      String?
+  isActive    Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive])
+}

@@ -16,6 +16,9 @@ model Order {
   note            String?
   
 
+   // Order Tracking
+  ipAddress      String?
+
   // Shipping
   isInsideDhaka   Boolean
   shippingFee     Float       @default(0)

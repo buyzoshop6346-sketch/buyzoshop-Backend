@@ -17,6 +17,7 @@ import { AnalyticsRoutes } from '../modules/analytics/analytics.route';
 import { DashboardRoutes } from '../modules/dashboard-analytics/dashboard.route';
 import { ReviewRoutes } from '../modules/reviews/review.route';
 import { pathaoRoutes } from '../modules/pathao/pathao.route';
+import { blockedCustomerRoutes } from '../modules/blocked-customer/blocked-customer.route';
 
 const router = Router();
 
@@ -32,6 +33,7 @@ router.use('/analytics', AnalyticsRoutes);
 router.use('/dashboard-analytics', DashboardRoutes);
 router.use('/reviews', ReviewRoutes);
 router.use('/pathao', pathaoRoutes);
+router.use('/blocked-customers', blockedCustomerRoutes);
 
 // account api
 router.use('/personal-entries', PersonalEntryRoutes);
