@@ -21,3 +21,10 @@ export interface GetAllOrdersParams {
   search?: string;
   status?: string;
 }
+
+export interface AddProductToOrderPayload {
+  productId: string;
+  quantity?: number;
+  size?: string | null;
+  color?: string | null;
+}

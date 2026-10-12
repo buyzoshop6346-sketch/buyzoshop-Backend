@@ -1,5 +1,6 @@
 import { Prisma } from '../../../generated/prisma/client';
 import { prisma } from '../../lib/prisma';
+import { AddProductToOrderPayload } from './order.interface';
 
 type GetAllOrdersParams = {
   page?: number;
@@ -609,6 +610,197 @@ const updateOrder = async (
   }
 };
 
+// ADD PRODUCT TO EXISTING ORDER
+
+const addProductToOrder = async (
+  orderId: string,
+  payload: AddProductToOrderPayload,
+) => {
+  const { productId, size, color } = payload;
+  const quantity = Number(payload.quantity ?? 1);
+
+  if (!orderId) {
+    throw new Error('Order ID is required');
+  }
+
+  if (!productId) {
+    throw new Error('Product ID is required');
+  }
+
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    throw new Error('Quantity must be a positive integer');
+  }
+
+  return prisma.$transaction(async tx => {
+    // 1. Find order
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+    });
+
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    if (order.status === 'CANCELLED') {
+      throw new Error('Cannot add product to a cancelled order');
+    }
+
+    // 2. Find product
+    const product = await tx.product.findUnique({
+      where: { id: productId },
+    });
+
+    if (!product) {
+      throw new Error('Product not found');
+    }
+
+    // 3. Check stock
+    if (product.stock < quantity) {
+      throw new Error('Insufficient product stock');
+    }
+
+    // 4. Calculate price from database
+    const unitPrice = product.specialPrice ?? product.price;
+
+    const subtotal = unitPrice * quantity;
+
+    // 5. Create order item and update total
+    await tx.orderItem.create({
+      data: {
+        orderId,
+        productId: product.id,
+        name: product.name,
+        price: unitPrice,
+        quantity,
+        size: size || null,
+        color: color || null,
+      },
+    });
+
+    // 6. Update product stock
+    await tx.product.update({
+      where: { id: product.id },
+      data: {
+        stock: {
+          decrement: quantity,
+        },
+      },
+    });
+
+    // 7. Update order total
+    await tx.order.update({
+      where: { id: orderId },
+      data: {
+        total: {
+          increment: subtotal,
+        },
+      },
+    });
+
+    // 8. Return updated order
+    return tx.order.findUnique({
+      where: { id: orderId },
+      include: {
+        items: {
+          include: {
+            product: true,
+          },
+        },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            avatar: true,
+          },
+        },
+      },
+    });
+  });
+};
+
+// REMOVE PRODUCT FROM EXISTING ORDER
+
+const removeProductFromOrder = async (orderId: string, itemId: string) => {
+  if (!orderId || !itemId) {
+    throw new Error('Order ID and Item ID are required');
+  }
+
+  return prisma.$transaction(
+    async tx => {
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+      });
+
+      if (!order) {
+        throw new Error('Order not found');
+      }
+
+      const item = await tx.orderItem.findFirst({
+        where: {
+          id: itemId,
+          orderId,
+        },
+      });
+
+      if (!item) {
+        throw new Error('Order item not found');
+      }
+
+      // Remove the product's subtotal from order total.
+      const updatedOrder = await tx.order.update({
+        where: { id: orderId },
+        data: {
+          total: {
+            decrement: item.price * item.quantity,
+          },
+        },
+      });
+
+      // Restore stock if your inventory system requires it.
+      if (item.productId) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: {
+            stock: {
+              increment: item.quantity,
+            },
+          },
+        });
+      }
+
+      await tx.orderItem.delete({
+        where: { id: itemId },
+      });
+
+      return tx.order.findUnique({
+        where: { id: orderId },
+        include: {
+          items: {
+            include: {
+              product: true,
+            },
+          },
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              avatar: true,
+            },
+          },
+        },
+      });
+    },
+    {
+      maxWait: 10000,
+      timeout: 20000,
+    },
+  );
+};
+
 // GET CUSTOMER ORDER HISTORY BY PHONE
 
 const getCustomerOrderHistoryByPhone = async (phone: string) => {
@@ -753,4 +945,6 @@ export const OrderService = {
   updateOrder,
   getSingleOrder,
   getCustomerOrderHistoryByPhone,
+  addProductToOrder,
+  removeProductFromOrder,
 };

@@ -48,6 +48,19 @@ router.get(
 router.patch('/:id/status', accessRole, updateOrderStatusController);
 router.patch('/:id', OrderController.updateOrderController);
 
+// ADD PRODUCT TO EXISTING ORDER - ADMIN ONLY
+router.patch(
+  '/:orderId/items',
+  accessRole,
+  OrderController.addProductToOrderController,
+);
+// delete PRODUCT FROM  EXISTING ORDER - ADMIN ONLY
+router.delete(
+  '/:orderId/items/:itemId',
+  accessRole,
+  OrderController.removeProductFromOrderController,
+);
+
 // Delete order
 router.delete('/:id', accessRole, deleteOrderController);
 export const OrderRoutes = router;

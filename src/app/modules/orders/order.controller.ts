@@ -226,6 +226,45 @@ const updateOrderController = catchAsync(
   },
 );
 
+// ADD PRODUCT TO EXISTING ORDER
+
+const addProductToOrderController = catchAsync(
+  async (req: Request, res: Response) => {
+    const { orderId } = req.params;
+
+    const result = await OrderService.addProductToOrder(
+      orderId as string,
+      req.body,
+    );
+
+    sendResponse(res, {
+      httpStatusCode: 200,
+      success: true,
+      message: 'Product added to order successfully',
+      data: result,
+    });
+  },
+);
+
+// delete PRODUCT TO EXISTING ORDER
+const removeProductFromOrderController = catchAsync(
+  async (req: Request, res: Response) => {
+    const { orderId, itemId } = req.params;
+
+    const result = await OrderService.removeProductFromOrder(
+      orderId as string,
+      itemId as string,
+    );
+
+    sendResponse(res, {
+      httpStatusCode: 200,
+      success: true,
+      message: 'Product removed from order successfully',
+      data: result,
+    });
+  },
+);
+
 //   GET CUSTOMER ORDER HISTORY BY PHONE
 
 const getCustomerOrderHistoryByPhone = catchAsync(
@@ -305,4 +344,6 @@ export const OrderController = {
   getSingleOrder,
   updateOrderController,
   getCustomerOrderHistoryByPhone,
+  addProductToOrderController,
+  removeProductFromOrderController,
 };

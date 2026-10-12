@@ -1658,6 +1658,155 @@ var updateOrder = async (orderId, payload) => {
     throw new Error("Failed to update order");
   }
 };
+var addProductToOrder = async (orderId, payload) => {
+  const { productId, size, color } = payload;
+  const quantity = Number(payload.quantity ?? 1);
+  if (!orderId) {
+    throw new Error("Order ID is required");
+  }
+  if (!productId) {
+    throw new Error("Product ID is required");
+  }
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    throw new Error("Quantity must be a positive integer");
+  }
+  return prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({
+      where: { id: orderId }
+    });
+    if (!order) {
+      throw new Error("Order not found");
+    }
+    if (order.status === "CANCELLED") {
+      throw new Error("Cannot add product to a cancelled order");
+    }
+    const product = await tx.product.findUnique({
+      where: { id: productId }
+    });
+    if (!product) {
+      throw new Error("Product not found");
+    }
+    if (product.stock < quantity) {
+      throw new Error("Insufficient product stock");
+    }
+    const unitPrice = product.specialPrice ?? product.price;
+    const subtotal = unitPrice * quantity;
+    await tx.orderItem.create({
+      data: {
+        orderId,
+        productId: product.id,
+        name: product.name,
+        price: unitPrice,
+        quantity,
+        size: size || null,
+        color: color || null
+      }
+    });
+    await tx.product.update({
+      where: { id: product.id },
+      data: {
+        stock: {
+          decrement: quantity
+        }
+      }
+    });
+    await tx.order.update({
+      where: { id: orderId },
+      data: {
+        total: {
+          increment: subtotal
+        }
+      }
+    });
+    return tx.order.findUnique({
+      where: { id: orderId },
+      include: {
+        items: {
+          include: {
+            product: true
+          }
+        },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            avatar: true
+          }
+        }
+      }
+    });
+  });
+};
+var removeProductFromOrder = async (orderId, itemId) => {
+  if (!orderId || !itemId) {
+    throw new Error("Order ID and Item ID are required");
+  }
+  return prisma.$transaction(
+    async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id: orderId }
+      });
+      if (!order) {
+        throw new Error("Order not found");
+      }
+      const item = await tx.orderItem.findFirst({
+        where: {
+          id: itemId,
+          orderId
+        }
+      });
+      if (!item) {
+        throw new Error("Order item not found");
+      }
+      const updatedOrder = await tx.order.update({
+        where: { id: orderId },
+        data: {
+          total: {
+            decrement: item.price * item.quantity
+          }
+        }
+      });
+      if (item.productId) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: {
+            stock: {
+              increment: item.quantity
+            }
+          }
+        });
+      }
+      await tx.orderItem.delete({
+        where: { id: itemId }
+      });
+      return tx.order.findUnique({
+        where: { id: orderId },
+        include: {
+          items: {
+            include: {
+              product: true
+            }
+          },
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              avatar: true
+            }
+          }
+        }
+      });
+    },
+    {
+      maxWait: 1e4,
+      timeout: 2e4
+    }
+  );
+};
 var getCustomerOrderHistoryByPhone = async (phone) => {
   try {
     if (!phone) {
@@ -1767,7 +1916,9 @@ var OrderService = {
   getAllOrders,
   updateOrder,
   getSingleOrder,
-  getCustomerOrderHistoryByPhone
+  getCustomerOrderHistoryByPhone,
+  addProductToOrder,
+  removeProductFromOrder
 };
 
 // src/app/modules/orders/order.controller.ts
@@ -1935,6 +2086,36 @@ var updateOrderController = catchAsync(
     });
   }
 );
+var addProductToOrderController = catchAsync(
+  async (req, res) => {
+    const { orderId } = req.params;
+    const result = await OrderService.addProductToOrder(
+      orderId,
+      req.body
+    );
+    sendResponse(res, {
+      httpStatusCode: 200,
+      success: true,
+      message: "Product added to order successfully",
+      data: result
+    });
+  }
+);
+var removeProductFromOrderController = catchAsync(
+  async (req, res) => {
+    const { orderId, itemId } = req.params;
+    const result = await OrderService.removeProductFromOrder(
+      orderId,
+      itemId
+    );
+    sendResponse(res, {
+      httpStatusCode: 200,
+      success: true,
+      message: "Product removed from order successfully",
+      data: result
+    });
+  }
+);
 var getCustomerOrderHistoryByPhone2 = catchAsync(
   async (req, res) => {
     const { phone } = req.query;
@@ -1997,7 +2178,9 @@ var OrderController = {
   getAllOrders: getAllOrders2,
   getSingleOrder: getSingleOrder2,
   updateOrderController,
-  getCustomerOrderHistoryByPhone: getCustomerOrderHistoryByPhone2
+  getCustomerOrderHistoryByPhone: getCustomerOrderHistoryByPhone2,
+  addProductToOrderController,
+  removeProductFromOrderController
 };
 
 // src/app/modules/orders/order.route.ts
@@ -2021,6 +2204,16 @@ router3.get(
 );
 router3.patch("/:id/status", accessRole3, updateOrderStatusController);
 router3.patch("/:id", OrderController.updateOrderController);
+router3.patch(
+  "/:orderId/items",
+  accessRole3,
+  OrderController.addProductToOrderController
+);
+router3.delete(
+  "/:orderId/items/:itemId",
+  accessRole3,
+  OrderController.removeProductFromOrderController
+);
 router3.delete("/:id", accessRole3, deleteOrderController);
 var OrderRoutes = router3;
 
